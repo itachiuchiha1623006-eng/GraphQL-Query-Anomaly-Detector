@@ -77,9 +77,10 @@ def make_report(
         },
         "rule_violations": rule_result["violations"],
         "frequency_detail": {
-            "current_rate_per_min": freq_result["current_rate"],
-            "ewma_baseline":        freq_result["ewma_baseline"],
-            "total_requests":       freq_result["total_requests"],
+            "current_bucket_count": freq_result.get("current_bucket_count", 0),
+            "ewma_baseline":        freq_result.get("ewma_baseline", 0),
+            "total_requests":       freq_result.get("total_requests", 0),
+            "warmup":               freq_result.get("warmup", True),
         },
         "features_received": features,
     }

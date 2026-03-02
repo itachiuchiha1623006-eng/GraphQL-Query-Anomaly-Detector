@@ -1,135 +1,168 @@
 """
-frequency_detector.py
+frequency_detector.py  (v2 — bucket-based EWMA)
 
-EWMA (Exponentially Weighted Moving Average) query frequency anomaly detector.
+Root cause of v1 failure:
+  Per-request EWMA updates let the baseline *chase* incoming traffic.
+  A gradual flood of 80 req in 4s looks normal because baseline rises with it.
 
-Per client IP we maintain a sliding window of request timestamps.
-We compute the current request rate and compare it against an
-EWMA baseline — a statistically significant spike triggers an anomaly.
+Fix:
+  Bucket the time axis into 1-second slots.
+  EWMA is updated once per second on the HISTORICAL bucket counts.
+  Current rate = requests in the LAST bucket.
+  Spike = current rate >> EWMA of past N buckets.
+
+This correctly flags both:
+  - Sudden bursts  (attacker jumps from 0→100 rpm instantly)
+  - Gradual floods (30-second ramp-up causes bucket counts to diverge from ewma)
 """
 
 import time
-import math
-from collections import deque
+from collections import defaultdict, deque
 from threading import Lock
+
+# ── Config defaults ──────────────────────────────────────────────────────────
+BUCKET_SECONDS   = 1      # width of each time bucket (seconds)
+HISTORY_BUCKETS  = 30     # how many past buckets to keep for EWMA baseline
+EWMA_ALPHA       = 0.20   # EWMA smoothing (lower = slower adaptation = stricter)
+SPIKE_MULTIPLIER = 2.5    # current_bucket >= SPIKE_MULTIPLIER * ewma_baseline → anomaly
+MIN_HISTORY      = 5      # minimum buckets before detection activates (warm-up)
 
 
 class FrequencyDetector:
     """
-    Thread-safe per-IP EWMA frequency anomaly detector.
-
-    Parameters
-    ----------
-    window_seconds : int
-        Rolling time window used to count requests.
-    alpha : float
-        EWMA smoothing factor. Lower = slower adaptation (stricter baseline).
-    spike_multiplier : float
-        How many times above EWMA baseline counts as anomalous.
-    min_samples : int
-        Minimum requests before anomaly detection kicks in (warm-up period).
+    Thread-safe per-IP bucket-based EWMA frequency anomaly detector.
     """
 
     def __init__(
         self,
-        window_seconds: int = 60,
-        alpha: float = 0.15,
-        spike_multiplier: float = 3.5,
-        min_samples: int = 10,
+        bucket_seconds: float = BUCKET_SECONDS,
+        history_buckets: int  = HISTORY_BUCKETS,
+        alpha: float          = EWMA_ALPHA,
+        spike_multiplier: float = SPIKE_MULTIPLIER,
+        min_history: int      = MIN_HISTORY,
     ):
-        self.window = window_seconds
-        self.alpha = alpha
-        self.spike_multiplier = spike_multiplier
-        self.min_samples = min_samples
+        self.bucket_sec      = bucket_seconds
+        self.history         = history_buckets
+        self.alpha           = alpha
+        self.spike_mult      = spike_multiplier
+        self.min_history     = min_history
 
-        # Per-IP state
-        self._timestamps: dict[str, deque] = {}
-        self._ewma: dict[str, float] = {}          # smoothed rate (req/min)
-        self._total_count: dict[str, int] = {}
+        # Per-IP: deque of (bucket_key, count) pairs — bucket_key = int(ts // bucket_sec)
+        self._buckets: dict[str, deque]  = {}
+        # Per-IP: current EWMA value
+        self._ewma:    dict[str, float]  = {}
         self._lock = Lock()
 
-    def _prune_window(self, ip: str, now: float):
-        q = self._timestamps[ip]
-        cutoff = now - self.window
-        while q and q[0] < cutoff:
-            q.popleft()
+    def _bucket_key(self, ts: float) -> int:
+        return int(ts // self.bucket_sec)
+
+    def _current_bucket(self, ip: str, now_key: int) -> int:
+        """Count requests in the CURRENT bucket."""
+        dq = self._buckets.get(ip, deque())
+        return sum(c for k, c in dq if k == now_key)
+
+    def _update_ewma(self, ip: str, now_key: int):
+        """
+        Compute EWMA over all HISTORICAL buckets (excluding current one).
+        EWMA advances once per second; gaps (no traffic) count as 0.
+        """
+        dq = self._buckets.get(ip, deque())
+        if not dq:
+            return 0.0
+
+        # Build a dict of historical bucket counts (exclude current bucket)
+        hist = {k: c for k, c in dq if k < now_key}
+        if not hist:
+            return self._ewma.get(ip, 0.0)
+
+        # Fill any missing buckets with 0 (inactivity periods)
+        oldest = min(hist)
+        newest = max(hist)
+        ewma = self._ewma.get(ip, 0.0)
+
+        for key in range(oldest, newest + 1):
+            count = hist.get(key, 0)
+            if ewma == 0.0 and count > 0:
+                ewma = float(count)   # cold start
+            else:
+                ewma = self.alpha * count + (1 - self.alpha) * ewma
+
+        self._ewma[ip] = ewma
+        return ewma
 
     def record_and_score(self, client_ip: str) -> dict:
         """
-        Record a new request for client_ip and return:
-          {
-            "score": float [0,1],
-            "current_rate": float,   # req/min in current window
-            "ewma_baseline": float,  # smoothed baseline rate
-            "total_requests": int,
-          }
+        Record this request and return anomaly score.
         """
-        now = time.time()
+        now     = time.time()
+        now_key = self._bucket_key(now)
 
         with self._lock:
-            if client_ip not in self._timestamps:
-                self._timestamps[client_ip] = deque()
-                self._ewma[client_ip] = 0.0
-                self._total_count[client_ip] = 0
+            if client_ip not in self._buckets:
+                self._buckets[client_ip] = deque()
+                self._ewma[client_ip]    = 0.0
 
-            q = self._timestamps[client_ip]
-            q.append(now)
-            self._prune_window(client_ip, now)
-            self._total_count[client_ip] += 1
+            dq = self._buckets[client_ip]
 
-            count = len(q)
-            total = self._total_count[client_ip]
+            # Prune buckets older than history window
+            cutoff = now_key - self.history
+            while dq and dq[0][0] < cutoff:
+                dq.popleft()
 
-            # Current rate in requests-per-minute
-            current_rate = count * (60.0 / self.window)
+            # Add / increment current bucket
+            if dq and dq[-1][0] == now_key:
+                k, c = dq.pop()
+                dq.append((k, c + 1))
+            else:
+                dq.append((now_key, 1))
 
-            # Update EWMA
-            old_ewma = self._ewma[client_ip]
-            new_ewma = (
-                current_rate
-                if old_ewma == 0
-                else self.alpha * current_rate + (1 - self.alpha) * old_ewma
-            )
-            self._ewma[client_ip] = new_ewma
+            # Update EWMA on historical buckets
+            ewma = self._update_ewma(client_ip, now_key)
 
-            # Not enough data yet → return safe score
-            if total < self.min_samples:
+            # Current burst = requests in the current 1-second slot
+            current_count = self._current_bucket(client_ip, now_key)
+
+            # Total requests seen so far (across all buckets)
+            total = sum(c for _, c in dq)
+            distinct_buckets = len(set(k for k, _ in dq if k < now_key))
+
+            # Not enough history yet → return safe score
+            if distinct_buckets < self.min_history:
                 return {
                     "score": 0.0,
-                    "current_rate": round(current_rate, 2),
-                    "ewma_baseline": round(new_ewma, 2),
+                    "current_bucket_count": current_count,
+                    "ewma_baseline": round(ewma, 2),
                     "total_requests": total,
+                    "warmup": True,
                 }
 
-            # Anomaly score: how many times above baseline?
-            baseline = max(new_ewma, 1.0)
-            ratio = current_rate / baseline
+            # ── Anomaly scoring ──────────────────────────────────────────────
+            baseline = max(ewma, 0.5)   # floor at 0.5 to avoid division by zero
+            ratio    = current_count / baseline
 
-            # Sigmoid-like mapping: ratio ≥ spike_multiplier → score ≈ 1.0
-            # score = clamp((ratio - 1) / (spike_multiplier - 1), 0, 1)
             if ratio <= 1.0:
                 anomaly_score = 0.0
-            elif ratio >= self.spike_multiplier:
+            elif ratio >= self.spike_mult:
                 anomaly_score = 1.0
             else:
-                anomaly_score = (ratio - 1.0) / (self.spike_multiplier - 1.0)
+                # Linear interpolation between 1x and spike_mult
+                anomaly_score = (ratio - 1.0) / (self.spike_mult - 1.0)
 
             return {
-                "score": round(anomaly_score, 4),
-                "current_rate": round(current_rate, 2),
-                "ewma_baseline": round(new_ewma, 2),
-                "total_requests": total,
+                "score":               round(anomaly_score, 4),
+                "current_bucket_count": current_count,
+                "ewma_baseline":        round(ewma, 2),
+                "total_requests":       total,
+                "warmup":               False,
             }
 
     def reset_ip(self, client_ip: str):
-        """Clear state for an IP (e.g. after a ban expires)."""
         with self._lock:
-            self._timestamps.pop(client_ip, None)
+            self._buckets.pop(client_ip, None)
             self._ewma.pop(client_ip, None)
-            self._total_count.pop(client_ip, None)
 
 
-# Module-level singleton shared across requests
+# ── Module-level singleton ────────────────────────────────────────────────────
 _detector = FrequencyDetector()
 
 

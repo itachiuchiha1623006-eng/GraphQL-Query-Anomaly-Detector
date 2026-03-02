@@ -57,37 +57,51 @@ function anomalyMiddleware() {
             return next();
         }
 
-        // 4. Log the analysis result
+        // 4. Determine block reason
+        const hasRuleViolations = Object.keys(report.rule_violations || {}).length > 0;
+        const exceedsMLThreshold = report.ensemble_score >= BLOCK_THRESHOLD;
+
+        // Rules are HARD blocks — they fire independently of ensemble score.
+        // ML threshold is a soft block for subtle structural/frequency patterns.
+        const shouldBlock = hasRuleViolations || exceedsMLThreshold;
+        const blockReason = hasRuleViolations ? 'RULE_VIOLATION' : 'ML_ANOMALY';
+
+        // 5. Log the analysis result
         const logPayload = {
             clientIp,
             queryName: features.query_name,
             ensembleScore: report.ensemble_score,
-            isAnomaly: report.is_anomaly,
+            shouldBlock,
+            blockReason: shouldBlock ? blockReason : null,
             ruleViolations: report.rule_violations,
             componentScores: report.component_scores,
         };
 
-        if (report.is_anomaly) {
+        if (shouldBlock) {
             logger.warn('🚨 Anomalous query detected', logPayload);
         } else {
             logger.info('✅ Query passed', { clientIp, queryName: features.query_name, score: report.ensemble_score });
         }
 
-        // 5. Emit event to dashboard subscribers
+        // 6. Emit event to dashboard subscribers
         anomalyEvents.emit('analysis', {
             ...logPayload,
+            isAnomaly: shouldBlock,
             timestamp: new Date().toISOString(),
-            rawQuery: rawQuery.slice(0, 200), // truncate for dashboard display
+            rawQuery: rawQuery.slice(0, 200),
         });
 
-        // 6. Block or pass
-        if (report.is_anomaly && !ALERT_ONLY) {
+        // 7. Block or pass
+        if (shouldBlock && !ALERT_ONLY) {
             return res.status(400).json({
                 errors: [
                     {
-                        message: 'Request blocked by anomaly detection middleware.',
+                        message: hasRuleViolations
+                            ? `Query blocked: rule violation detected.`
+                            : 'Query blocked: ML anomaly score exceeded threshold.',
                         extensions: {
                             code: 'ANOMALY_DETECTED',
+                            block_reason: blockReason,
                             ensemble_score: report.ensemble_score,
                             threshold: BLOCK_THRESHOLD,
                             component_scores: report.component_scores,

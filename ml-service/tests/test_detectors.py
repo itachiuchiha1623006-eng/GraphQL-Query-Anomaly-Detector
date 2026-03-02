@@ -8,8 +8,10 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
+import time
 from detectors import structural_detector, frequency_detector
 from scorer import rule_score, ensemble_score
+
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────
@@ -57,33 +59,52 @@ class TestStructuralDetector:
 
 # ── Frequency Detector (EWMA) ───────────────────────────────────────────────
 
+# ── Frequency Detector (bucket-based EWMA) ─────────────────────────────────
+
 class TestFrequencyDetector:
     def test_warmup_returns_zero(self):
         from detectors.frequency_detector import FrequencyDetector
-        det = FrequencyDetector(min_samples=10)
-        for _ in range(5):
+        det = FrequencyDetector(min_history=5)
+        # Only 3 distinct-second buckets → still in warmup
+        for _ in range(3):
             result = det.record_and_score("192.168.1.100")
-        assert result["score"] == 0.0, "Should not flag during warm-up"
+            time.sleep(1.01)
+        assert result["score"] == 0.0, "Should return 0 during warm-up"
+        assert result["warmup"] is True
 
-    def test_spike_detected(self):
-        import time
+    def test_normal_traffic_after_warmup_low_score(self):
         from detectors.frequency_detector import FrequencyDetector
-        det = FrequencyDetector(window_seconds=60, spike_multiplier=2.0, min_samples=5)
-        # Warm up
-        for _ in range(5):
-            det.record_and_score("10.0.0.1")
-        # Simulate a burst of 50 requests
-        for _ in range(50):
-            result = det.record_and_score("10.0.0.1")
-        assert result["score"] > 0.0, "Burst should trigger anomaly"
+        det = FrequencyDetector(min_history=5, spike_multiplier=2.5)
+        # Send 1 req/sec for 6 seconds (normal traffic)
+        for _ in range(6):
+            result = det.record_and_score("10.0.0.2")
+            time.sleep(1.01)
+        assert result["score"] < 0.5, f"Steady normal traffic should not be anomalous: {result}"
+
+    def test_burst_after_baseline_is_detected(self):
+        from detectors.frequency_detector import FrequencyDetector
+        import time as t
+        det = FrequencyDetector(min_history=5, spike_multiplier=2.5, alpha=0.2)
+        # Warm up with slow traffic: 1 req/sec for 6 seconds → establish low baseline
+        for _ in range(6):
+            det.record_and_score("attacker-ip")
+            t.sleep(1.01)
+        # Now burst 20 requests in the same 1-second bucket
+        last = None
+        for _ in range(20):
+            last = det.record_and_score("attacker-ip")
+        assert last["score"] > 0.0, f"Burst after slow baseline should be anomalous: {last}"
+        assert last["warmup"] is False
 
     def test_different_ips_isolated(self):
         from detectors.frequency_detector import FrequencyDetector
-        det = FrequencyDetector(min_samples=3)
+        det = FrequencyDetector(min_history=3)
         for _ in range(3):
             det.record_and_score("1.1.1.1")
-        result = det.record_and_score("2.2.2.2")   # brand new IP
-        assert result["score"] == 0.0
+            time.sleep(1.01)
+        result = det.record_and_score("2.2.2.2")  # brand new IP
+        assert result["score"] == 0.0, "New IP should start fresh"
+
 
 
 # ── Rule Scorer ─────────────────────────────────────────────────────────────
