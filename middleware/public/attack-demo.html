@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Attack Demo — GraphQL Anomaly Detection</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet" />
+    <style>
+        :root {
+            --gold: #f0b429;
+            --dark: #0a0a0f;
+            --surface: #12121a;
+            --surface2: #1a1a28;
+            --border: #2a2a3d;
+            --text: #e8e8f0;
+            --muted: #6b6b8a;
+            --red: #ef4444;
+            --green: #22c55e;
+            --orange: #f97316;
+            --blue: #3b82f6;
+            --purple: #a855f7;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--dark);
+            color: var(--text);
+            min-height: 100vh;
+        }
+
+        nav {
+            background: rgba(10, 10, 15, .95);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            padding: 0 2rem;
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            height: 64px;
+        }
+
+        .nav-logo {
+            font-size: 1.4rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--gold), #fff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: 2px;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 1.5rem;
+            margin-left: auto;
+        }
+
+        .nav-links a {
+            color: var(--muted);
+            text-decoration: none;
+            font-size: .9rem;
+            font-weight: 500;
+            padding: .4rem .8rem;
+            border-radius: 6px;
+            transition: .2s;
+        }
+
+        .nav-links a:hover {
+            color: var(--text);
+            background: var(--surface2);
+        }
+
+        .nav-links a.active {
+            color: var(--gold);
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 1fr 440px;
+            gap: 0;
+            height: calc(100vh - 64px);
+            overflow: hidden;
+        }
+
+        /* LEFT: Attack Selection */
+        .attack-panel {
+            padding: 2rem;
+            overflow-y: auto;
+            border-right: 1px solid var(--border);
+        }
+
+        .panel-title {
+            font-size: 1.4rem;
+            font-weight: 800;
+            margin-bottom: .5rem;
+        }
+
+        .panel-subtitle {
+            color: var(--muted);
+            font-size: .9rem;
+            margin-bottom: 2rem;
+        }
+
+        .attack-section {
+            margin-bottom: 2rem;
+        }
+
+        .attack-section-label {
+            font-size: .75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--muted);
+            margin-bottom: .75rem;
+            padding-bottom: .5rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .attack-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: .75rem;
+        }
+
+        .attack-btn {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1rem;
+            cursor: pointer;
+            text-align: left;
+            transition: .2s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .attack-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .attack-btn.critical:hover {
+            border-color: var(--red);
+            box-shadow: 0 4px 20px rgba(239, 68, 68, .2);
+        }
+
+        .attack-btn.high:hover {
+            border-color: var(--orange);
+            box-shadow: 0 4px 20px rgba(249, 115, 22, .2);
+        }
+
+        .attack-btn.medium:hover {
+            border-color: var(--gold);
+            box-shadow: 0 4px 20px rgba(240, 180, 41, .2);
+        }
+
+        .attack-btn.firing {
+            animation: flash .4s;
+        }
+
+        @keyframes flash {
+
+            0%,
+            100% {
+                opacity: 1
+            }
+
+            50% {
+                opacity: .4
+            }
+        }
+
+        .attack-btn-icon {
+            font-size: 1.5rem;
+            margin-bottom: .5rem;
+        }
+
+        .attack-btn-name {
+            font-size: .85rem;
+            font-weight: 600;
+            margin-bottom: .25rem;
+        }
+
+        .attack-btn-desc {
+            font-size: .75rem;
+            color: var(--muted);
+            line-height: 1.4;
+        }
+
+        .severity-pill {
+            position: absolute;
+            top: .6rem;
+            right: .6rem;
+            font-size: .65rem;
+            font-weight: 700;
+            padding: .15rem .45rem;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }
+
+        .sev-critical {
+            background: rgba(239, 68, 68, .2);
+            color: var(--red);
+        }
+
+        .sev-high {
+            background: rgba(249, 115, 22, .2);
+            color: var(--orange);
+        }
+
+        .sev-medium {
+            background: rgba(240, 180, 41, .2);
+            color: var(--gold);
+        }
+
+        /* FIRE ALL */
+        .fire-all-btn {
+            width: 100%;
+            background: linear-gradient(135deg, var(--red), #c0392b);
+            color: #fff;
+            border: none;
+            padding: 1rem;
+            border-radius: 12px;
+            font-weight: 800;
+            font-size: 1rem;
+            cursor: pointer;
+            margin-bottom: 1.5rem;
+            letter-spacing: 1px;
+            transition: .2s;
+        }
+
+        .fire-all-btn:hover {
+            opacity: .9;
+            transform: translateY(-2px);
+        }
+
+        .fire-all-btn:disabled {
+            opacity: .4;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* RIGHT: Live Feed */
+        .feed-panel {
+            display: flex;
+            flex-direction: column;
+            background: var(--surface);
+        }
+
+        .feed-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .feed-title {
+            font-size: 1.1rem;
+            font-weight: 800;
+            margin-bottom: 1rem;
+        }
+
+        /* Stats */
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: .75rem;
+            margin-bottom: 0;
+        }
+
+        .stat-box {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: .75rem;
+            text-align: center;
+        }
+
+        .stat-val {
+            font-size: 1.6rem;
+            font-weight: 800;
+        }
+
+        .stat-label {
+            font-size: .7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--muted);
+            margin-top: .25rem;
+        }
+
+        .stat-blocked .stat-val {
+            color: var(--red);
+        }
+
+        .stat-passed .stat-val {
+            color: var(--green);
+        }
+
+        .stat-rate .stat-val {
+            color: var(--gold);
+        }
+
+        /* Live indicator */
+        .live-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .live-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--green);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+                transform: scale(1)
+            }
+
+            50% {
+                opacity: .5;
+                transform: scale(1.3)
+            }
+        }
+
+        .live-label {
+            display: flex;
+            align-items: center;
+            gap: .5rem;
+            font-size: .85rem;
+            font-weight: 600;
+            color: var(--green);
+        }
+
+        .clear-btn {
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--muted);
+            font-size: .8rem;
+            padding: .3rem .7rem;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        /* Log entries */
+        .feed-log {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: .5rem;
+        }
+
+        .log-entry {
+            border-radius: 10px;
+            padding: .75rem 1rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: .75rem;
+            border: 1px solid transparent;
+            animation: slideIn .3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px)
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0)
+            }
+        }
+
+        .log-blocked {
+            background: rgba(239, 68, 68, .08);
+            border-color: rgba(239, 68, 68, .3);
+        }
+
+        .log-passed {
+            background: rgba(34, 197, 94, .06);
+            border-color: rgba(34, 197, 94, .2);
+        }
+
+        .log-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: .4rem;
+        }
+
+        .log-status {
+            font-size: .7rem;
+            font-weight: 800;
+            padding: .2rem .5rem;
+            border-radius: 4px;
+            letter-spacing: 1px;
+        }
+
+        .status-blocked {
+            background: rgba(239, 68, 68, .2);
+            color: var(--red);
+        }
+
+        .status-passed {
+            background: rgba(34, 197, 94, .2);
+            color: var(--green);
+        }
+
+        .log-attack {
+            font-size: .7rem;
+            color: var(--muted);
+        }
+
+        .log-time {
+            font-size: .65rem;
+            color: var(--muted);
+        }
+
+        .log-score {
+            color: var(--gold);
+            font-weight: 700;
+        }
+
+        .log-reason {
+            font-size: .7rem;
+            color: var(--purple);
+            margin-top: .25rem;
+        }
+
+        .log-query {
+            color: var(--muted);
+            margin-top: .4rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .score-bar {
+            height: 3px;
+            border-radius: 2px;
+            background: var(--border);
+            margin-top: .5rem;
+        }
+
+        .score-bar-fill {
+            height: 100%;
+            border-radius: 2px;
+            transition: .3s;
+        }
+
+        .empty-feed {
+            text-align: center;
+            padding: 3rem;
+            color: var(--muted);
+            font-size: .9rem;
+        }
+    </style>
+</head>
+
+<body>
+
+    <nav>
+        <div class="nav-logo">NEXUS</div>
+        <div class="nav-links">
+            <a href="/shop/">🛍️ Shop</a>
+            <a href="/dashboard">📊 Dashboard</a>
+            <a href="/attack-demo" class="active">⚡ Attack Demo</a>
+        </div>
+    </nav>
+
+    <div class="layout">
+        <!-- LEFT: ATTACK CONTROL PANEL -->
+        <div class="attack-panel">
+            <div class="panel-title">⚡ Attack Control Panel</div>
+            <div class="panel-subtitle">Fire simulated GraphQL attacks against the NEXUS store. Watch them get detected
+                and blocked in real-time.</div>
+
+            <button class="fire-all-btn" id="fireAllBtn" onclick="fireAll()">🚀 FIRE ALL ATTACKS (16)</button>
+
+            <!-- DoS Attacks -->
+            <div class="attack-section">
+                <div class="attack-section-label">💥 Denial of Service (DoS)</div>
+                <div class="attack-grid">
+                    <button class="attack-btn critical" onclick="fire('deep_nesting')">
+                        <span class="severity-pill sev-critical">Critical</span>
+                        <div class="attack-btn-icon">🕳️</div>
+                        <div class="attack-btn-name">Deep Nesting</div>
+                        <div class="attack-btn-desc">10-level nested query exhausting resolver stack</div>
+                    </button>
+                    <button class="attack-btn critical" onclick="fire('recursive_fragments')">
+                        <span class="severity-pill sev-critical">Critical</span>
+                        <div class="attack-btn-icon">🔄</div>
+                        <div class="attack-btn-name">Recursive Fragments</div>
+                        <div class="attack-btn-desc">Fragment amplification multiplying field resolution</div>
+                    </button>
+                    <button class="attack-btn high" onclick="fire('resolver_cost')">
+                        <span class="severity-pill sev-high">High</span>
+                        <div class="attack-btn-icon">💸</div>
+                        <div class="attack-btn-name">Resolver Cost Bomb</div>
+                        <div class="attack-btn-desc">Extreme resolver cost via nested relationships</div>
+                    </button>
+                    <button class="attack-btn high" onclick="fire('field_explosion')">
+                        <span class="severity-pill sev-high">High</span>
+                        <div class="attack-btn-icon">💣</div>
+                        <div class="attack-btn-name">Field Explosion</div>
+                        <div class="attack-btn-desc">500+ field selections saturating response</div>
+                    </button>
+                    <button class="attack-btn high" onclick="fire('huge_args')">
+                        <span class="severity-pill sev-high">High</span>
+                        <div class="attack-btn-icon">📦</div>
+                        <div class="attack-btn-name">Huge Arguments</div>
+                        <div class="attack-btn-desc">Massive argument payload overwhelming parser</div>
+                    </button>
+                    <button class="attack-btn high" onclick="fire('batch_abuse')">
+                        <span class="severity-pill sev-high">High</span>
+                        <div class="attack-btn-icon">📋</div>
+                        <div class="attack-btn-name">Batch Query Abuse</div>
+                        <div class="attack-btn-desc">Batching 50 operations in single request</div>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Access & Auth -->
+            <div class="attack-section">
+                <div class="attack-section-label">🔐 Access Control & Auth</div>
+                <div class="attack-grid">
+                    <button class="attack-btn high" onclick="fire('alias_explosion')">
+                        <span class="severity-pill sev-high">High</span>
+                        <div class="attack-btn-icon">🏷️</div>
+                        <div class="attack-btn-name">Alias Explosion</div>
+                        <div class="attack-btn-desc">25 aliases multiplying result data massively</div>
+                    </button>
+                    <button class="attack-btn high" onclick="fire('idor')">
+                        <span class="severity-pill sev-high">High</span>
+                        <div class="attack-btn-icon">🔍</div>
+                        <div class="attack-btn-name">IDOR Field Scan</div>
+                        <div class="attack-btn-desc">Enumerating all customer IDs via aliases</div>
+                    </button>
+                    <button class="attack-btn critical" onclick="fire('brute_force')">
+                        <span class="severity-pill sev-critical">Critical</span>
+                        <div class="attack-btn-icon">🔨</div>
+                        <div class="attack-btn-name">Brute Force Batch</div>
+                        <div class="attack-btn-desc">100 login attempts batched in one request</div>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Injection -->
+            <div class="attack-section">
+                <div class="attack-section-label">💉 Injection Attacks</div>
+                <div class="attack-grid">
+                    <button class="attack-btn critical" onclick="fire('sql_injection')">
+                        <span class="severity-pill sev-critical">Critical</span>
+                        <div class="attack-btn-icon">🗃️</div>
+                        <div class="attack-btn-name">SQL/NoSQL Injection</div>
+                        <div class="attack-btn-desc">Injection payload in search argument</div>
+                    </button>
+                    <button class="attack-btn critical" onclick="fire('cmd_injection')">
+                        <span class="severity-pill sev-critical">Critical</span>
+                        <div class="attack-btn-icon">💻</div>
+                        <div class="attack-btn-name">OS Command Injection</div>
+                        <div class="attack-btn-desc">Command injection via product search query</div>
+                    </button>
+                    <button class="attack-btn critical" onclick="fire('ssrf')">
+                        <span class="severity-pill sev-critical">Critical</span>
+                        <div class="attack-btn-icon">🌐</div>
+                        <div class="attack-btn-name">SSRF / CRLF</div>
+                        <div class="attack-btn-desc">Server-side request forgery via URL argument</div>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Recon -->
+            <div class="attack-section">
+                <div class="attack-section-label">🔭 Recon & Misc</div>
+                <div class="attack-grid">
+                    <button class="attack-btn medium" onclick="fire('introspection')">
+                        <span class="severity-pill sev-medium">Medium</span>
+                        <div class="attack-btn-icon">🔬</div>
+                        <div class="attack-btn-name">Introspection Abuse</div>
+                        <div class="attack-btn-desc">Full schema dump via introspection query</div>
+                    </button>
+                    <button class="attack-btn high" onclick="fire('mutation_spam')">
+                        <span class="severity-pill sev-high">High</span>
+                        <div class="attack-btn-icon">✍️</div>
+                        <div class="attack-btn-name">Mutation Spam</div>
+                        <div class="attack-btn-desc">Flooding add-to-cart mutations in bulk</div>
+                    </button>
+                    <button class="attack-btn medium" onclick="fire('frequency_spike')">
+                        <span class="severity-pill sev-medium">Medium</span>
+                        <div class="attack-btn-icon">📈</div>
+                        <div class="attack-btn-name">Frequency Spike</div>
+                        <div class="attack-btn-desc">60 rapid requests to trigger rate anomaly</div>
+                    </button>
+                    <button class="attack-btn medium" onclick="fire('default_config')">
+                        <span class="severity-pill sev-medium">Medium</span>
+                        <div class="attack-btn-icon">⚙️</div>
+                        <div class="attack-btn-name">Insecure Config</div>
+                        <div class="attack-btn-desc">Exploiting permissive default limits</div>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- RIGHT: LIVE FEED -->
+        <div class="feed-panel">
+            <div class="feed-header">
+                <div class="feed-title">Live Detection Feed</div>
+                <div class="stats-row">
+                    <div class="stat-box stat-blocked">
+                        <div class="stat-val" id="statBlocked">0</div>
+                        <div class="stat-label">Blocked</div>
+                    </div>
+                    <div class="stat-box stat-passed">
+                        <div class="stat-val" id="statPassed">0</div>
+                        <div class="stat-label">Passed</div>
+                    </div>
+                    <div class="stat-box stat-rate">
+                        <div class="stat-val" id="statRate">0%</div>
+                        <div class="stat-label">Block Rate</div>
+                    </div>
+                </div>
+            </div>
+            <div class="live-row">
+                <div class="live-label">
+                    <div class="live-dot"></div> SSE Connected
+                </div>
+                <button class="clear-btn" onclick="clearLog()">Clear</button>
+            </div>
+            <div class="feed-log" id="feedLog">
+                <div class="empty-feed">⚡ Click an attack button to begin simulation</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const GQL = '/graphql';
+        let totalBlocked = 0, totalPassed = 0;
+
+        // ── Attack definitions ──────────────────────────────────────────────────────
+        const ATTACKS = {
+            deep_nesting: {
+                name: 'Deep Nesting',
+                query: `{ products { name category { name products { name category { name products { name category { name products { name category { name } } } } } } } } }`
+            },
+            recursive_fragments: {
+                name: 'Recursive Fragments',
+                query: `fragment PF on Product { id name price category { name } reviews { rating title customer { name orders { status } } } }
+{ p1:products{...PF} p2:products{...PF} p3:products{...PF} p4:products{...PF} p5:products{...PF}
+  p6:products{...PF} p7:products{...PF} p8:products{...PF} p9:products{...PF} p10:products{...PF} p11:products{...PF} }`
+            },
+            resolver_cost: {
+                name: 'Resolver Cost Bomb',
+                query: `{ products { name reviews { body customer { name orders { items { product { name reviews { body customer { name } } } } } } } } }`
+            },
+            field_explosion: {
+                name: 'Field Explosion',
+                query: `{ f1:products{id} f2:products{name} f3:products{price} f4:products{description} f5:products{rating}
+f6:categories{id} f7:categories{name} f8:categories{description} f9:customers{id} f10:customers{name}
+f11:products{reviewCount} f12:products{inStock} f13:categories{productCount} f14:products{id} f15:products{name}
+f16:customers{email} f17:products{price} f18:products{rating} f19:products{tags} f20:products{images} }`
+            },
+            huge_args: {
+                name: 'Huge Arguments',
+                query: `{ searchProducts(query: "${`A'.OR.'1'='1`}${'x'.repeat(5000)}") { id name } }`
+            },
+            batch_abuse: {
+                name: 'Batch Query Abuse',
+                query: `fragment CF on Category { id name description productCount products { id name price rating } }
+{ c1:categories{...CF} c2:categories{...CF} c3:categories{...CF} c4:categories{...CF} c5:categories{...CF}
+  c6:categories{...CF} c7:categories{...CF} c8:categories{...CF} c9:categories{...CF} c10:categories{...CF}
+  c11:categories{...CF} c12:categories{...CF} c13:categories{...CF} c14:categories{...CF} c15:categories{...CF}
+  c16:categories{...CF} c17:categories{...CF} c18:categories{...CF} c19:categories{...CF} c20:categories{...CF} }`
+            },
+            alias_explosion: {
+                name: 'Alias Explosion',
+                query: `{ a1:products{id name price} a2:products{id name price} a3:products{id name price} a4:products{id name price}
+a5:products{id name price} a6:products{id name price} a7:products{id name price} a8:products{id name price}
+a9:products{id name price} a10:products{id name price} a11:products{id name price} a12:products{id name price}
+a13:products{id name price} a14:products{id name price} a15:products{id name price} a16:products{id name price}
+a17:products{id name price} a18:products{id name price} a19:products{id name price} a20:products{id name price}
+a21:products{id name price} a22:products{id name price} a23:products{id name price} a24:products{id name price}
+a25:products{id name price} }`
+            },
+            idor: {
+                name: 'IDOR Field Scan',
+                query: `{ u1:customer(id:"1"){id name email orders{status}} u2:customer(id:"2"){id name email orders{status}}
+u3:customer(id:"3"){id name email orders{status}} u4:customer(id:"4"){id name email role}
+u5:customer(id:"5"){id name email} u6:customer(id:"6"){id name email} u7:customer(id:"7"){id name email}
+u8:customer(id:"8"){id name email} u9:customer(id:"9"){id name email} u10:customer(id:"10"){id name email}
+u11:customer(id:"11"){id name email} u12:customer(id:"12"){id name email} }`
+            },
+            brute_force: {
+                name: 'Brute Force Batch',
+                query: (() => {
+                    const ops = Array.from({ length: 20 }, (_, i) =>
+                        `m${i + 1}: login(email:"admin@demo.com", password:"attempt${i + 1}"){ token customer{id role} }`
+                    ).join('\n');
+                    return `mutation BruteForce { ${ops} }`;
+                })()
+            },
+            sql_injection: {
+                name: 'SQL Injection',
+                query: `{ searchProducts(query: "' OR '1'='1'; DROP TABLE products; --") { id name price } }`
+            },
+            cmd_injection: {
+                name: 'OS Command Injection',
+                query: `{ searchProducts(query: "laptop; cat /etc/passwd; echo 'pwned'") { id name } }`
+            },
+            ssrf: {
+                name: 'SSRF Attack',
+                query: `{ searchProducts(query: "http://169.254.169.254/latest/meta-data/iam/security-credentials/") { id name } }`
+            },
+            introspection: {
+                name: 'Introspection Abuse',
+                query: `{ __schema { types { name kind fields { name type { name kind ofType { name kind } } args { name defaultValue } } } } }`
+            },
+            mutation_spam: {
+                name: 'Mutation Spam',
+                query: (() => {
+                    const ops = Array.from({ length: 15 }, (_, i) =>
+                        `a${i + 1}: addToCart(customerId:"1", productId:"${(i % 5) + 1}", quantity:${i + 1}){ id total }`
+                    ).join('\n');
+                    return `mutation Spam { ${ops} }`;
+                })()
+            },
+            frequency_spike: {
+                name: 'Frequency Spike',
+                isFrequency: true,
+                query: `{ products(limit:5) { id name price } }`
+            },
+            default_config: {
+                name: 'Insecure Config',
+                query: `{ products { id name price description category { id name products { id name price category { id name } } } reviews { id rating title body customer { id name email } } } }`
+            },
+        };
+
+        // ── Fire a single attack ─────────────────────────────────────────────────────
+        async function fire(type, labelOverride) {
+            const attack = ATTACKS[type];
+            if (!attack) return;
+
+            // Animate button
+            const btn = event?.target?.closest('.attack-btn');
+            if (btn) { btn.classList.add('firing'); setTimeout(() => btn.classList.remove('firing'), 400); }
+
+            if (attack.isFrequency) {
+                // Send 60 rapid requests
+                for (let i = 0; i < 60; i++) {
+                    setTimeout(() => sendQuery(attack.query, attack.name), i * 50);
+                }
+            } else {
+                await sendQuery(attack.query, labelOverride || attack.name);
+            }
+        }
+
+        async function sendQuery(query, attackName) {
+            const t0 = Date.now();
+            try {
+                const res = await fetch(GQL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query })
+                });
+                const data = await res.json();
+                const latency = Date.now() - t0;
+                const isBlocked = data.errors?.[0]?.extensions?.code === 'ANOMALY_DETECTED';
+                const ext = data.errors?.[0]?.extensions;
+                addLogEntry({
+                    attackName, isBlocked, latency,
+                    score: ext?.ensemble_score || null,
+                    reason: ext?.block_reason || null,
+                    components: ext?.component_scores || null,
+                    query: query.replace(/\s+/g, ' ').trim().substring(0, 80)
+                });
+            } catch (e) {
+                addLogEntry({
+                    attackName, isBlocked: false, latency: Date.now() - t0, error: e.message,
+                    query: query.replace(/\s+/g, ' ').trim().substring(0, 80)
+                });
+            }
+        }
+
+        function addLogEntry({ attackName, isBlocked, latency, score, reason, components, query, error }) {
+            const feed = document.getElementById('feedLog');
+            const empty = feed.querySelector('.empty-feed');
+            if (empty) empty.remove();
+
+            if (isBlocked) totalBlocked++; else totalPassed++;
+            const total = totalBlocked + totalPassed;
+            document.getElementById('statBlocked').textContent = totalBlocked;
+            document.getElementById('statPassed').textContent = totalPassed;
+            document.getElementById('statRate').textContent = Math.round(totalBlocked / total * 100) + '%';
+
+            const scoreColor = score >= 0.6 ? '#ef4444' : score >= 0.4 ? '#f97316' : '#22c55e';
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${isBlocked ? 'log-blocked' : 'log-passed'}`;
+            entry.innerHTML = `
+    <div class="log-top">
+      <span class="log-status ${isBlocked ? 'status-blocked' : 'status-passed'}">${isBlocked ? '🔴 BLOCKED' : '🟢 PASSED'}</span>
+      <span class="log-attack">${attackName}</span>
+      <span class="log-time">${latency}ms</span>
+    </div>
+    ${score !== null ? `<div class="log-score">Score: ${(score * 100).toFixed(1)}% ${components ? `· S:${Math.round((components.structural || 0) * 100)}% F:${Math.round((components.frequency || 0) * 100)}% R:${Math.round((components.rules || 0) * 100)}%` : ''}</div>` : ''}
+    ${reason ? `<div class="log-reason">Reason: ${reason}</div>` : ''}
+    ${error ? `<div class="log-reason" style="color:var(--orange)">Error: ${error}</div>` : ''}
+    <div class="log-query" title="${query}">${query}…</div>
+    ${score !== null ? `<div class="score-bar"><div class="score-bar-fill" style="width:${Math.round(score * 100)}%;background:${scoreColor}"></div></div>` : ''}
+  `;
+            feed.insertBefore(entry, feed.firstChild);
+
+            // Keep max 50 entries
+            if (feed.children.length > 50) feed.removeChild(feed.lastChild);
+        }
+
+        async function fireAll() {
+            const btn = document.getElementById('fireAllBtn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Firing attacks…';
+            const keys = Object.keys(ATTACKS);
+            for (let i = 0; i < keys.length; i++) {
+                await fire(keys[i]);
+                await new Promise(r => setTimeout(r, 300));
+            }
+            btn.disabled = false;
+            btn.textContent = '🚀 FIRE ALL ATTACKS (16)';
+        }
+
+        function clearLog() {
+            document.getElementById('feedLog').innerHTML = '<div class="empty-feed">⚡ Click an attack button to begin simulation</div>';
+            totalBlocked = 0; totalPassed = 0;
+            document.getElementById('statBlocked').textContent = '0';
+            document.getElementById('statPassed').textContent = '0';
+            document.getElementById('statRate').textContent = '0%';
+        }
+
+        // SSE for cross-panel sync
+        const es = new EventSource('/events');
+        es.onerror = () => {
+            document.querySelector('.live-label').innerHTML = '<div class="live-dot" style="background:var(--red)"></div> Reconnecting…';
+        };
+        es.onopen = () => {
+            document.querySelector('.live-label').innerHTML = '<div class="live-dot"></div> SSE Connected';
+        };
+    </script>
+</body>
+
+</html>

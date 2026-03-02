@@ -22,6 +22,17 @@ async function start() {
         res.sendFile(path.join(__dirname, '..', 'public', 'dashboard.html'));
     });
 
+    // ── E-Commerce Store ────────────────────────────────────────────────────────
+    app.get('/shop', (req, res) => res.redirect('/shop/'));
+    app.get('/shop/', (req, res) => {
+        res.sendFile(path.join(__dirname, '..', 'public', 'shop', 'index.html'));
+    });
+
+    // ── Attack Demo ─────────────────────────────────────────────────────────────
+    app.get('/attack-demo', (req, res) => {
+        res.sendFile(path.join(__dirname, '..', 'public', 'attack-demo.html'));
+    });
+
     // ── Server-Sent Events ──────────────────────────────────────────────────────
     app.get('/events', (req, res) => {
         res.setHeader('Content-Type', 'text/event-stream');

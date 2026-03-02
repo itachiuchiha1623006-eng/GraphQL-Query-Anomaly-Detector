@@ -1,55 +1,89 @@
 """
-structural_detector.py
-
-Isolation Forest –based structural anomaly detector.
-Covers: abnormal depth, excessive nesting, field explosion,
-        alias abuse, high resolver cost, data exfiltration.
-
-The model is trained (once) on synthetic normal query features.
+structural_detector.py  (v2 — multi-model support)
+====================================================
+Loads the best model selected by model_comparison.py (or falls back to
+Isolation Forest). Scores features returning a normalized [0,1] anomaly score.
 """
 
-import os
+import os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
 import numpy as np
-from ml.trainer import load_models
-from ml.training_data import FEATURE_COLUMNS
+import joblib
 
-# Singleton – load once on module import
-_iso, _scaler = None, None
+MODELS_DIR = os.path.join(os.path.dirname(__file__), '..', 'models')
 
+# ── Load models at import time ────────────────────────────────────────────────
 
-def _get_models():
-    global _iso, _scaler
-    if _iso is None:
-        _iso, _scaler = load_models()
-    return _iso, _scaler
+def _load():
+    # Prefer best_model (chosen by comparison), fall back to isolation_forest
+    for name, mfile, sfile in [
+        ('best',      'best_model.pkl',       'best_scaler.pkl'),
+        ('isolation', 'isolation_forest.pkl', 'scaler.pkl'),
+    ]:
+        mpath = os.path.join(MODELS_DIR, mfile)
+        spath = os.path.join(MODELS_DIR, sfile)
+        if os.path.exists(mpath) and os.path.exists(spath):
+            model  = joblib.load(mpath)
+            scaler = joblib.load(spath)
+            # Read model name if stored
+            npath = os.path.join(MODELS_DIR, 'best_model_name.pkl')
+            model_name = joblib.load(npath) if os.path.exists(npath) else name
+            print(f'[structural_detector] Loaded model: {model_name}')
+            return model, scaler, model_name
+    return None, None, None
+
+_model, _scaler, _model_name = _load()
+
+FEATURE_ORDER = [
+    'max_depth', 'total_fields', 'unique_fields', 'alias_count',
+    'introspection_count', 'fragment_count', 'estimated_cost',
+    'payload_size', 'field_entropy', 'nesting_variance',
+]
 
 
 def score(features: dict) -> float:
     """
-    Returns a structural anomaly score in [0, 1].
-    0 = perfectly normal, 1 = highly anomalous.
-
-    Isolation Forest returns:
-      +1  → inlier  (normal)
-      -1  → outlier (anomaly)
-    and a raw decision_function score (higher = more normal).
-    We convert this into a [0,1] anomaly score.
+    Returns anomaly score in [0, 1]. Higher = more anomalous.
+    Works with both unsupervised (IF/LOF/SVM) and supervised (RF) models.
     """
-    iso, scaler = _get_models()
+    global _model, _scaler, _model_name
+    if _model is None:
+        # Models not trained yet — return neutral score
+        return 0.5
 
-    # Build feature vector in correct column order
-    vec = np.array([[features.get(col, 0) for col in FEATURE_COLUMNS]], dtype=float)
-    vec_scaled = scaler.transform(vec)
+    vec = np.array([[features.get(f, 0.0) for f in FEATURE_ORDER]], dtype=float)
+    vec_scaled = _scaler.transform(vec)
 
-    # decision_function: negative scores are anomalous; positive are normal.
-    # Typical range is roughly [-0.5, 0.5].
-    raw = iso.decision_function(vec_scaled)[0]  # scalar
+    # Supervised model (Random Forest) → use predict_proba directly
+    if hasattr(_model, 'predict_proba'):
+        proba = _model.predict_proba(vec_scaled)[0]
+        anomaly_class_idx = list(_model.classes_).index(1) if 1 in _model.classes_ else 1
+        return round(float(proba[anomaly_class_idx]), 4)
 
-    # Normalize to [0,1] — clamp to [-1, 1] then invert
-    clipped = float(np.clip(raw, -1.0, 1.0))
-    anomaly_score = (1.0 - clipped) / 2.0  # +1 → 0.0 (normal), -1 → 1.0 (anomalous)
-    return round(anomaly_score, 4)
+    # Unsupervised models → convert decision_function to [0,1]
+    if hasattr(_model, 'decision_function'):
+        raw = float(_model.decision_function(vec_scaled)[0])
+        # decision_function: lower = more anomalous (IF uses negative)
+        # normalize: clip to [-0.5, 0.5] then map to [0, 1]
+        normalized = float(np.clip((-raw + 0.3) / 0.6, 0.0, 1.0))
+        return round(normalized, 4)
+
+    if hasattr(_model, 'score_samples'):
+        raw = float(_model.score_samples(vec_scaled)[0])
+        normalized = float(np.clip((-raw - (-10)) / 15, 0.0, 1.0))
+        return round(normalized, 4)
+
+    # Fallback: binary
+    pred = _model.predict(vec_scaled)[0]
+    return 1.0 if pred == -1 else 0.0
 
 
-def is_anomaly(features: dict, threshold: float = 0.6) -> bool:
-    return score(features) >= threshold
+def reload_models():
+    """Called by /train endpoint to hot-reload after retraining."""
+    global _model, _scaler, _model_name
+    _model, _scaler, _model_name = _load()
+
+
+def get_model_name() -> str:
+    return _model_name or 'unknown'

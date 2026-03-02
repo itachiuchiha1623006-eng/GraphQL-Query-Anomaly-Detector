@@ -10,7 +10,9 @@ const logger = require('../logger');
 
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:8000';
 const BLOCK_THRESHOLD = parseFloat(process.env.BLOCK_THRESHOLD || '0.6');
+const STRUCTURAL_THRESHOLD = parseFloat(process.env.STRUCTURAL_THRESHOLD || '0.72');
 const ALERT_ONLY = process.env.ALERT_ONLY === 'true';
+
 
 // SSE event emitter so the dashboard can stream anomaly events
 const EventEmitter = require('events');
@@ -60,11 +62,15 @@ function anomalyMiddleware() {
         // 4. Determine block reason
         const hasRuleViolations = Object.keys(report.rule_violations || {}).length > 0;
         const exceedsMLThreshold = report.ensemble_score >= BLOCK_THRESHOLD;
+        // Structural-only anomalies: IF score alone is high enough even without rules/frequency
+        // (ensemble max without rules/freq = 0.55 × structural, so 0.72 structural → 0.396 ensemble, still below 0.6)
+        // This separate check allows the Isolation Forest to block by itself.
+        const highStructuralScore = (report.component_scores?.structural || 0) >= STRUCTURAL_THRESHOLD;
 
-        // Rules are HARD blocks — they fire independently of ensemble score.
-        // ML threshold is a soft block for subtle structural/frequency patterns.
-        const shouldBlock = hasRuleViolations || exceedsMLThreshold;
-        const blockReason = hasRuleViolations ? 'RULE_VIOLATION' : 'ML_ANOMALY';
+        const shouldBlock = hasRuleViolations || exceedsMLThreshold || highStructuralScore;
+        const blockReason = hasRuleViolations ? 'RULE_VIOLATION'
+            : highStructuralScore ? 'ML_STRUCTURAL'
+                : 'ML_ANOMALY';
 
         // 5. Log the analysis result
         const logPayload = {
