@@ -1,0 +1,46 @@
+# ── Node.js ──────────────────────────────────────────────────────────────────
+middleware/node_modules/
+middleware/.env
+middleware/npm-debug.log*
+middleware/yarn-debug.log*
+middleware/yarn-error.log*
+middleware/.npm
+middleware/.node_repl_history
+
+# ── Python ────────────────────────────────────────────────────────────────────
+ml-service/venv/
+ml-service/__pycache__/
+ml-service/**/__pycache__/
+ml-service/**/*.pyc
+ml-service/**/*.pyo
+ml-service/**/*.pyd
+ml-service/.pytest_cache/
+ml-service/.env
+ml-service/logs/
+ml-service/data/
+
+# ── ML Model artifacts (auto-generated, do not commit) ────────────────────────
+ml-service/models/*.pkl
+ml-service/models/*.joblib
+
+# ── OS & Editor ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Misc ─────────────────────────────────────────────────────────────────────
+.env
+*.env.*
+!*.env.example
+dist/
+build/
+coverage/
+.nyc_output/
