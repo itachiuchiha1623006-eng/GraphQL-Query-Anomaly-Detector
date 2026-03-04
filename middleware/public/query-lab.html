@@ -1,0 +1,1060 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Query Analyzer Lab — GraphQL Security</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap"
+        rel="stylesheet" />
+    <style>
+        :root {
+            --gold: #f0b429;
+            --dark: #0a0a0f;
+            --surface: #12121a;
+            --surface2: #1a1a28;
+            --border: #2a2a3d;
+            --text: #e8e8f0;
+            --muted: #6b6b8a;
+            --red: #ef4444;
+            --green: #22c55e;
+            --orange: #f97316;
+            --blue: #3b82f6;
+            --purple: #a855f7;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--dark);
+            color: var(--text);
+            min-height: 100vh;
+        }
+
+        nav {
+            background: rgba(10, 10, 15, .95);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            padding: 0 2rem;
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            height: 64px;
+        }
+
+        .nav-logo {
+            font-size: 1.4rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--gold), #fff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: 2px;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 1.5rem;
+            margin-left: auto;
+        }
+
+        .nav-links a {
+            color: var(--muted);
+            text-decoration: none;
+            font-size: .9rem;
+            font-weight: 500;
+            padding: .4rem .8rem;
+            border-radius: 6px;
+            transition: .2s;
+        }
+
+        .nav-links a:hover {
+            color: var(--text);
+            background: var(--surface2);
+        }
+
+        .nav-links a.active {
+            color: var(--gold);
+        }
+
+        .page {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0;
+            height: calc(100vh - 64px);
+        }
+
+        /* ── LEFT: Editor ── */
+        .editor-panel {
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid var(--border);
+        }
+
+        .editor-header {
+            padding: 1.25rem 1.5rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .editor-title {
+            font-size: 1rem;
+            font-weight: 700;
+        }
+
+        .hint {
+            font-size: .75rem;
+            color: var(--muted);
+        }
+
+        /* Template picker */
+        .template-bar {
+            padding: .75rem 1.5rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            gap: .5rem;
+            overflow-x: auto;
+            align-items: center;
+        }
+
+        .template-label {
+            font-size: .75rem;
+            font-weight: 600;
+            color: var(--muted);
+            white-space: nowrap;
+            margin-right: .25rem;
+        }
+
+        .tpl-btn {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            color: var(--muted);
+            border-radius: 6px;
+            padding: .3rem .75rem;
+            font-size: .75rem;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: .2s;
+            font-family: inherit;
+        }
+
+        .tpl-btn:hover {
+            border-color: var(--gold);
+            color: var(--gold);
+        }
+
+        textarea#queryEditor {
+            flex: 1;
+            background: #0d0d14;
+            color: #e2e8f0;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: .875rem;
+            line-height: 1.7;
+            padding: 1.25rem 1.5rem;
+            resize: none;
+            border: none;
+            outline: none;
+            tab-size: 2;
+        }
+
+        .editor-footer {
+            padding: 1rem 1.5rem;
+            border-top: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .analyze-btn {
+            background: linear-gradient(135deg, var(--gold), #e6a800);
+            color: #000;
+            border: none;
+            padding: .75rem 2rem;
+            border-radius: 10px;
+            font-weight: 800;
+            font-size: .95rem;
+            cursor: pointer;
+            transition: .2s;
+            letter-spacing: .5px;
+        }
+
+        .analyze-btn:hover {
+            opacity: .9;
+            transform: translateY(-1px);
+        }
+
+        .analyze-btn:disabled {
+            opacity: .4;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .clear-btn {
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--muted);
+            border-radius: 8px;
+            padding: .75rem 1.2rem;
+            cursor: pointer;
+            font-size: .85rem;
+            transition: .2s;
+        }
+
+        .clear-btn:hover {
+            border-color: var(--border);
+            color: var(--text);
+        }
+
+        .char-count {
+            margin-left: auto;
+            font-size: .75rem;
+            color: var(--muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* ── RIGHT: Results ── */
+        .results-panel {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Verdict banner */
+        .verdict {
+            padding: 1.25rem 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            border-bottom: 1px solid var(--border);
+            min-height: 80px;
+            transition: .4s;
+        }
+
+        .verdict.idle {
+            background: var(--surface);
+        }
+
+        .verdict.loading {
+            background: var(--surface2);
+        }
+
+        .verdict.blocked {
+            background: linear-gradient(135deg, rgba(239, 68, 68, .12), rgba(239, 68, 68, .05));
+            border-bottom-color: rgba(239, 68, 68, .4);
+        }
+
+        .verdict.passed {
+            background: linear-gradient(135deg, rgba(34, 197, 94, .08), rgba(34, 197, 94, .03));
+            border-bottom-color: rgba(34, 197, 94, .3);
+        }
+
+        .verdict-icon {
+            font-size: 2.5rem;
+            flex-shrink: 0;
+        }
+
+        .verdict-main {
+            flex: 1;
+        }
+
+        .verdict-title {
+            font-size: 1.3rem;
+            font-weight: 800;
+        }
+
+        .verdict-sub {
+            font-size: .85rem;
+            color: var(--muted);
+            margin-top: .2rem;
+        }
+
+        .verdict-score {
+            font-size: 2.2rem;
+            font-weight: 800;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Score ring */
+        .score-section {
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            gap: 1.5rem;
+        }
+
+        .score-ring-wrap {
+            position: relative;
+            width: 100px;
+            height: 100px;
+            flex-shrink: 0;
+        }
+
+        .score-ring-wrap svg {
+            transform: rotate(-90deg);
+        }
+
+        .ring-bg {
+            fill: none;
+            stroke: var(--border);
+            stroke-width: 8;
+        }
+
+        .ring-fill {
+            fill: none;
+            stroke-width: 8;
+            stroke-linecap: round;
+            transition: stroke-dashoffset .6s ease;
+        }
+
+        .ring-label {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .ring-pct {
+            font-size: 1.3rem;
+            font-weight: 800;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .ring-name {
+            font-size: .65rem;
+            color: var(--muted);
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .component-bars {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: .75rem;
+            justify-content: center;
+        }
+
+        .cbar-row {
+            display: flex;
+            align-items: center;
+            gap: .75rem;
+        }
+
+        .cbar-label {
+            font-size: .8rem;
+            font-weight: 600;
+            width: 80px;
+            color: var(--muted);
+        }
+
+        .cbar-track {
+            flex: 1;
+            height: 8px;
+            background: var(--border);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .cbar-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: .5s;
+        }
+
+        .cbar-val {
+            font-size: .8rem;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+            width: 40px;
+            text-align: right;
+        }
+
+        /* Feature grid */
+        .features-section {
+            padding: 1.25rem 1.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .features-title {
+            font-size: .8rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--muted);
+            margin-bottom: .75rem;
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: .5rem;
+        }
+
+        .feature-cell {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: .6rem;
+            text-align: center;
+        }
+
+        .feat-val {
+            font-size: 1rem;
+            font-weight: 800;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .feat-name {
+            font-size: .65rem;
+            color: var(--muted);
+            margin-top: .2rem;
+            line-height: 1.3;
+        }
+
+        .feat-high {
+            border-color: rgba(239, 68, 68, .5);
+            background: rgba(239, 68, 68, .08);
+        }
+
+        .feat-high .feat-val {
+            color: var(--red);
+        }
+
+        .feat-warn {
+            border-color: rgba(249, 115, 22, .4);
+            background: rgba(249, 115, 22, .06);
+        }
+
+        .feat-warn .feat-val {
+            color: var(--orange);
+        }
+
+        /* Rule violations */
+        .violations-section {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .rule-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: .4rem;
+            background: rgba(239, 68, 68, .12);
+            border: 1px solid rgba(239, 68, 68, .3);
+            border-radius: 6px;
+            padding: .3rem .75rem;
+            font-size: .8rem;
+            font-weight: 600;
+            color: var(--red);
+            margin: .25rem;
+        }
+
+        /* History */
+        .history-section {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem 1.5rem;
+        }
+
+        .history-title {
+            font-size: .8rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--muted);
+            margin-bottom: .75rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .hist-clear {
+            font-size: .75rem;
+            background: none;
+            border: none;
+            color: var(--muted);
+            cursor: pointer;
+        }
+
+        .hist-entry {
+            display: flex;
+            align-items: center;
+            gap: .75rem;
+            padding: .6rem .75rem;
+            margin-bottom: .4rem;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: .2s;
+            font-size: .8rem;
+        }
+
+        .hist-entry:hover {
+            border-color: var(--gold);
+        }
+
+        .hist-status {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .hist-q {
+            flex: 1;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .hist-score {
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .hist-time {
+            color: var(--muted);
+            font-size: .7rem;
+        }
+
+        /* Empty / loading states */
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: var(--muted);
+        }
+
+        .empty-state .big {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        .spinner {
+            width: 24px;
+            height: 24px;
+            border: 2px solid var(--border);
+            border-top-color: var(--gold);
+            border-radius: 50%;
+            animation: spin .7s linear infinite;
+            display: inline-block;
+            margin-right: .5rem;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .tab {
+            padding: .75rem 1.25rem;
+            font-size: .85rem;
+            font-weight: 600;
+            cursor: pointer;
+            color: var(--muted);
+            border-bottom: 2px solid transparent;
+            transition: .2s;
+        }
+
+        .tab.active {
+            color: var(--gold);
+            border-bottom-color: var(--gold);
+        }
+    </style>
+</head>
+
+<body>
+
+    <nav>
+        <div class="nav-logo">NEXUS</div>
+        <div class="nav-links">
+            <a href="/shop/">🛍️ Shop</a>
+            <a href="/dashboard">📊 Dashboard</a>
+            <a href="/attack-demo">⚡ Attack Demo</a>
+            <a href="/query-lab" class="active">🔬 Query Lab</a>
+        </div>
+    </nav>
+
+    <div class="page">
+
+        <!-- ── LEFT: EDITOR ── -->
+        <div class="editor-panel">
+            <div class="editor-header">
+                <div>
+                    <div class="editor-title">🔬 Custom Query Analyzer</div>
+                    <div class="hint">Paste any GraphQL query — see full ML breakdown in real-time</div>
+                </div>
+            </div>
+
+            <!-- Quick templates -->
+            <div class="template-bar">
+                <span class="template-label">Templates:</span>
+                <button class="tpl-btn" onclick="loadTemplate('normal')">✅ Normal</button>
+                <button class="tpl-btn" onclick="loadTemplate('deep')">🕳️ Deep Nest</button>
+                <button class="tpl-btn" onclick="loadTemplate('alias')">🏷️ Alias Storm</button>
+                <button class="tpl-btn" onclick="loadTemplate('fragment')">🔄 Fragment Bomb</button>
+                <button class="tpl-btn" onclick="loadTemplate('intro')">🔬 Introspection</button>
+                <button class="tpl-btn" onclick="loadTemplate('injection')">💉 Injection</button>
+                <button class="tpl-btn" onclick="loadTemplate('cost')">💸 Cost Bomb</button>
+                <button class="tpl-btn" onclick="loadTemplate('idor')">🔍 IDOR</button>
+                <button class="tpl-btn" onclick="loadTemplate('brute')">🔨 Brute Force</button>
+            </div>
+
+            <textarea id="queryEditor" placeholder="# Paste any GraphQL query here...
+# Example:
+{ products(limit: 10) { id name price category { name } } }" spellcheck="false" oninput="updateCharCount()"></textarea>
+
+            <div class="editor-footer">
+                <button class="analyze-btn" id="analyzeBtn" onclick="analyze()">⚡ Analyze Query</button>
+                <button class="clear-btn" onclick="clearEditor()">Clear</button>
+                <span class="char-count" id="charCount">0 chars</span>
+            </div>
+        </div>
+
+        <!-- ── RIGHT: RESULTS ── -->
+        <div class="results-panel">
+
+            <!-- Verdict banner -->
+            <div class="verdict idle" id="verdict">
+                <div class="verdict-icon">🔬</div>
+                <div class="verdict-main">
+                    <div class="verdict-title">Awaiting Query</div>
+                    <div class="verdict-sub">Enter a GraphQL query and click Analyze</div>
+                </div>
+            </div>
+
+            <!-- Tabs -->
+            <div class="tabs">
+                <div class="tab active" onclick="switchTab('analysis',this)">Analysis</div>
+                <div class="tab" onclick="switchTab('features',this)">Features</div>
+                <div class="tab" onclick="switchTab('history',this)">History</div>
+            </div>
+
+            <!-- Tab: Analysis -->
+            <div id="tab-analysis">
+                <!-- Score ring + component bars -->
+                <div class="score-section" id="scoreSection">
+                    <div class="empty-state" style="flex:1;padding:2rem">
+                        <div class="big">📊</div>
+                        <div>Scores will appear here after analysis</div>
+                    </div>
+                </div>
+
+                <!-- Rule violations -->
+                <div class="violations-section" id="violationsSection" style="display:none">
+                    <div class="features-title">⚠️ Rule Violations</div>
+                    <div id="violationsList"></div>
+                </div>
+            </div>
+
+            <!-- Tab: Features -->
+            <div id="tab-features" style="display:none; overflow-y:auto;">
+                <div class="features-section" style="flex:1">
+                    <div class="features-title">Extracted Features</div>
+                    <div class="feature-grid" id="featureGrid">
+                        <div class="empty-state" style="grid-column:1/-1;padding:2rem">Run an analysis first</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab: History -->
+            <div id="tab-history" style="display:none; flex:1; overflow-y:auto; padding:1rem 1.5rem;">
+                <div class="history-title">
+                    <span>Past Queries</span>
+                    <button class="hist-clear" onclick="clearHistory()">Clear all</button>
+                </div>
+                <div id="historyList">
+                    <div class="empty-state">
+                        <div class="big">📋</div>No queries analyzed yet
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        const GQL = '/graphql';
+        const history = [];
+
+        // ── Templates ──────────────────────────────────────────────────────────────
+        const TEMPLATES = {
+            normal: `{ products(limit: 5) { id name price category { name } } }`,
+
+            deep: `{
+  products {
+    name
+    category {
+      name
+      products {
+        name
+        category {
+          name
+          products {
+            name
+            category {
+              name
+              products { name }
+            }
+          }
+        }
+      }
+    }
+  }
+}`,
+
+            alias: `{
+  a1: products { id name price }
+  a2: products { id name price }
+  a3: products { id name price }
+  a4: products { id name price }
+  a5: products { id name price }
+  a6: products { id name price }
+  a7: products { id name price }
+  a8: products { id name price }
+  a9: products { id name price }
+  a10: products { id name price }
+  a11: products { id name price }
+  a12: products { id name price }
+  a13: products { id name price }
+  a14: products { id name price }
+  a15: products { id name price }
+}`,
+
+            fragment: `fragment FullProduct on Product {
+  id name description price rating reviewCount inStock tags
+  category { id name description }
+  reviews { id rating title body helpful createdAt customer { id name } }
+}
+{
+  p1: products { ...FullProduct }
+  p2: products { ...FullProduct }
+  p3: products { ...FullProduct }
+  p4: products { ...FullProduct }
+  p5: products { ...FullProduct }
+  p6: products { ...FullProduct }
+  p7: products { ...FullProduct }
+  p8: products { ...FullProduct }
+  p9: products { ...FullProduct }
+  p10: products { ...FullProduct }
+}`,
+
+            intro: `{
+  __schema {
+    types {
+      name
+      kind
+      fields {
+        name
+        type { name kind ofType { name kind } }
+        args { name defaultValue type { name } }
+      }
+    }
+  }
+}`,
+
+            injection: `{
+  searchProducts(query: "' OR 1=1; DROP TABLE products; --") {
+    id name price
+  }
+}`,
+
+            cost: `{
+  products {
+    reviews {
+      customer {
+        orders {
+          items {
+            product {
+              reviews {
+                customer {
+                  orders { id status total }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}`,
+
+            idor: `{
+  u1: customer(id: "1") { id name email role orders { status total } }
+  u2: customer(id: "2") { id name email role orders { status total } }
+  u3: customer(id: "3") { id name email role orders { status total } }
+  u4: customer(id: "4") { id name email role orders { status total } }
+  u5: customer(id: "5") { id name email role orders { status total } }
+  u6: customer(id: "6") { id name email role }
+  u7: customer(id: "7") { id name email role }
+  u8: customer(id: "8") { id name email role }
+}`,
+
+            brute: `mutation BruteForce {
+  a1: login(email: "admin@nexus.com", password: "password") { token customer { role } }
+  a2: login(email: "admin@nexus.com", password: "admin123") { token customer { role } }
+  a3: login(email: "admin@nexus.com", password: "123456") { token customer { role } }
+  a4: login(email: "admin@nexus.com", password: "qwerty") { token customer { role } }
+  a5: login(email: "admin@nexus.com", password: "letmein") { token customer { role } }
+  a6: login(email: "admin@nexus.com", password: "nexus2024") { token customer { role } }
+  a7: login(email: "admin@nexus.com", password: "admin2024") { token customer { role } }
+  a8: login(email: "admin@nexus.com", password: "secret") { token customer { role } }
+  a9: login(email: "admin@nexus.com", password: "graphql") { token customer { role } }
+  a10: login(email: "admin@nexus.com", password: "pass1234") { token customer { role } }
+}`,
+        };
+
+        function loadTemplate(name) {
+            document.getElementById('queryEditor').value = TEMPLATES[name] || '';
+            updateCharCount();
+        }
+
+        function updateCharCount() {
+            const q = document.getElementById('queryEditor').value;
+            document.getElementById('charCount').textContent = `${q.length} chars`;
+        }
+
+        function clearEditor() {
+            document.getElementById('queryEditor').value = '';
+            updateCharCount();
+        }
+
+        // ── Analyze ────────────────────────────────────────────────────────────────
+        async function analyze() {
+            const query = document.getElementById('queryEditor').value.trim();
+            if (!query) return;
+
+            setLoading(true);
+
+            const t0 = Date.now();
+            try {
+                const res = await fetch(GQL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query })
+                });
+                const data = await res.json();
+                const latency = Date.now() - t0;
+
+                const isBlocked = data.errors?.[0]?.extensions?.code === 'ANOMALY_DETECTED';
+                const ext = data.errors?.[0]?.extensions;
+
+                if (ext) {
+                    renderResults({ isBlocked, ext, latency, query });
+                } else {
+                    // No anomaly extension — query passed, try to get score from headers or just show pass
+                    renderResults({ isBlocked: false, ext: null, latency, query, passed: true });
+                }
+
+                addHistory({ isBlocked, score: ext?.ensemble_score, query, latency });
+            } catch (e) {
+                setLoading(false);
+                showError(e.message);
+            }
+        }
+
+        function renderResults({ isBlocked, ext, latency, query, passed }) {
+            setLoading(false);
+
+            // Verdict
+            const verdict = document.getElementById('verdict');
+            verdict.className = 'verdict ' + (isBlocked ? 'blocked' : 'passed');
+
+            const score = ext?.ensemble_score;
+            const scoreColor = score >= 0.6 ? '#ef4444' : score >= 0.4 ? '#f97316' : '#22c55e';
+
+            verdict.innerHTML = `
+    <div class="verdict-icon">${isBlocked ? '🚨' : '✅'}</div>
+    <div class="verdict-main">
+      <div class="verdict-title" style="color:${isBlocked ? 'var(--red)' : 'var(--green)'}">${isBlocked ? 'BLOCKED' : 'PASSED'}</div>
+      <div class="verdict-sub">${ext?.block_reason || (passed ? 'No anomaly detected' : 'Passed middleware')} · ${latency}ms</div>
+    </div>
+    ${score != null ? `<div class="verdict-score" style="color:${scoreColor}">${(score * 100).toFixed(1)}%</div>` : ''}
+  `;
+
+            // Score ring + bars
+            if (ext?.component_scores) {
+                const cs = ext.component_scores;
+                const ensemble = ext.ensemble_score || 0;
+                const ringColor = ensemble >= 0.6 ? '#ef4444' : ensemble >= 0.4 ? '#f97316' : '#22c55e';
+                const circ = 2 * Math.PI * 42;
+                const offset = circ * (1 - ensemble);
+
+                document.getElementById('scoreSection').innerHTML = `
+      <div class="score-ring-wrap">
+        <svg width="100" height="100" viewBox="0 0 100 100">
+          <circle class="ring-bg" cx="50" cy="50" r="42" />
+          <circle class="ring-fill" cx="50" cy="50" r="42"
+            stroke="${ringColor}"
+            stroke-dasharray="${circ}"
+            stroke-dashoffset="${offset}" />
+        </svg>
+        <div class="ring-label">
+          <div class="ring-pct" style="color:${ringColor}">${(ensemble * 100).toFixed(0)}%</div>
+          <div class="ring-name">Ensemble</div>
+        </div>
+      </div>
+      <div class="component-bars">
+        ${bar('Structural', cs.structural || 0)}
+        ${bar('Frequency', cs.frequency || 0)}
+        ${bar('Rules', cs.rules || 0)}
+      </div>
+    `;
+            } else {
+                document.getElementById('scoreSection').innerHTML = `
+      <div class="empty-state" style="flex:1;padding:2rem">
+        <div class="big">✅</div>
+        <div style="color:var(--green)">Query passed — no anomaly report available</div>
+      </div>`;
+            }
+
+            // Rule violations
+            const violations = ext?.rule_violations || {};
+            const vsec = document.getElementById('violationsSection');
+            if (Object.keys(violations).length > 0) {
+                vsec.style.display = 'block';
+                document.getElementById('violationsList').innerHTML =
+                    Object.entries(violations).map(([k, v]) =>
+                        `<span class="rule-chip">⚠️ ${k}: ${v}</span>`).join('');
+            } else {
+                vsec.style.display = 'none';
+            }
+
+            // Feature grid
+            if (ext?.features_received) {
+                renderFeatures(ext.features_received);
+            }
+        }
+
+        function bar(label, val) {
+            const color = val >= 0.6 ? 'var(--red)' : val >= 0.35 ? 'var(--orange)' : 'var(--green)';
+            return `
+    <div class="cbar-row">
+      <div class="cbar-label">${label}</div>
+      <div class="cbar-track"><div class="cbar-fill" style="width:${(val * 100).toFixed(1)}%;background:${color}"></div></div>
+      <div class="cbar-val" style="color:${color}">${(val * 100).toFixed(0)}%</div>
+    </div>`;
+        }
+
+        function renderFeatures(features) {
+            const FEATURE_INFO = {
+                max_depth: { label: 'Max Depth', warn: 7, crit: 12 },
+                total_fields: { label: 'Total Fields', warn: 30, crit: 80 },
+                unique_fields: { label: 'Uniq Fields', warn: 25, crit: 60 },
+                alias_count: { label: 'Aliases', warn: 8, crit: 15 },
+                introspection_count: { label: 'Introspection', warn: 1, crit: 5 },
+                fragment_count: { label: 'Fragments', warn: 5, crit: 15 },
+                estimated_cost: { label: 'Est. Cost', warn: 100, crit: 400 },
+                payload_size: { label: 'Payload (B)', warn: 500, crit: 2000 },
+                field_entropy: { label: 'Entropy', warn: 3, crit: 6 },
+                nesting_variance: { label: 'Nest Variance', warn: 2, crit: 5 },
+            };
+
+            const cells = Object.entries(FEATURE_INFO).map(([key, info]) => {
+                const val = features[key] ?? 0;
+                const display = typeof val === 'number' ? (Number.isInteger(val) ? val : val.toFixed(2)) : val;
+                const cls = val >= info.crit ? 'feat-high' : val >= info.warn ? 'feat-warn' : '';
+                return `<div class="feature-cell ${cls}"><div class="feat-val">${display}</div><div class="feat-name">${info.label}</div></div>`;
+            }).join('');
+
+            document.getElementById('featureGrid').innerHTML = cells;
+        }
+
+        // ── History ─────────────────────────────────────────────────────────────────
+        function addHistory({ isBlocked, score, query, latency }) {
+            history.unshift({ isBlocked, score, query, latency, time: new Date().toLocaleTimeString() });
+            if (history.length > 30) history.pop();
+            renderHistory();
+        }
+
+        function renderHistory() {
+            const el = document.getElementById('historyList');
+            if (!history.length) {
+                el.innerHTML = '<div class="empty-state"><div class="big">📋</div>No queries analyzed yet</div>';
+                return;
+            }
+            el.innerHTML = history.map((h, i) => {
+                const color = h.isBlocked ? 'var(--red)' : 'var(--green)';
+                const scoreColor = (h.score || 0) >= 0.6 ? 'var(--red)' : (h.score || 0) >= 0.4 ? 'var(--orange)' : 'var(--green)';
+                return `
+    <div class="hist-entry" onclick="reloadQuery(${i})">
+      <div class="hist-status" style="background:${color}"></div>
+      <div class="hist-q">${h.query.replace(/\s+/g, ' ').trim()}</div>
+      ${h.score != null ? `<div class="hist-score" style="color:${scoreColor}">${(h.score * 100).toFixed(0)}%</div>` : ''}
+      <div class="hist-time">${h.time}</div>
+    </div>`;
+            }).join('');
+        }
+
+        function reloadQuery(idx) {
+            document.getElementById('queryEditor').value = history[idx].query;
+            updateCharCount();
+            switchTab('analysis', document.querySelector('.tab'));
+        }
+
+        function clearHistory() {
+            history.length = 0;
+            renderHistory();
+        }
+
+        // ── Tabs ────────────────────────────────────────────────────────────────────
+        function switchTab(name, el) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            el.classList.add('active');
+            ['analysis', 'features', 'history'].forEach(t => {
+                document.getElementById('tab-' + t).style.display = t === name ? '' : 'none';
+            });
+        }
+
+        // ── Helpers ──────────────────────────────────────────────────────────────────
+        function setLoading(loading) {
+            const btn = document.getElementById('analyzeBtn');
+            btn.disabled = loading;
+            btn.innerHTML = loading ? '<span class="spinner"></span>Analyzing…' : '⚡ Analyze Query';
+            if (loading) {
+                document.getElementById('verdict').className = 'verdict loading';
+                document.getElementById('verdict').innerHTML = `
+      <div class="verdict-icon"><span class="spinner" style="width:2rem;height:2rem"></span></div>
+      <div class="verdict-main"><div class="verdict-title">Analyzing…</div><div class="verdict-sub">Running ML pipeline</div></div>`;
+            }
+        }
+
+        function showError(msg) {
+            document.getElementById('verdict').className = 'verdict idle';
+            document.getElementById('verdict').innerHTML = `
+    <div class="verdict-icon">⚠️</div>
+    <div class="verdict-main"><div class="verdict-title" style="color:var(--orange)">Error</div><div class="verdict-sub">${msg}</div></div>`;
+        }
+
+        // Keyboard shortcut: Ctrl+Enter to analyze
+        document.addEventListener('keydown', e => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') analyze();
+        });
+
+        // Load normal template by default
+        loadTemplate('normal');
+    </script>
+</body>
+
+</html>

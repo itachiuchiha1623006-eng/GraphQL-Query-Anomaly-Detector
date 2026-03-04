@@ -33,7 +33,7 @@ from sklearn.metrics import (
     f1_score, roc_auc_score
 )
 
-from ml.training_data import generate_normal_samples, FEATURE_COLUMNS
+from ml.training_data import generate_blended_normal, generate_normal_samples, FEATURE_COLUMNS
 from ml.attack_generator import generate_all_attacks
 
 MODELS_DIR = os.path.join(os.path.dirname(__file__), '..', 'models')
@@ -42,7 +42,11 @@ os.makedirs(MODELS_DIR, exist_ok=True)
 # ── Build dataset ─────────────────────────────────────────────────────────────
 
 def build_dataset():
-    normal_df = generate_normal_samples(n=3000)
+    try:
+        normal_df = generate_blended_normal(n_total=3000, corpus_ratio=0.60)
+    except Exception as e:
+        print(f'[comparison] WARNING: corpus blend failed ({e}) — using pure synthetic.')
+        normal_df = generate_normal_samples(n=3000)
     normal_df['label'] = 0
 
     attack_rows = generate_all_attacks()

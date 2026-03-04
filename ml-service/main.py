@@ -5,6 +5,7 @@ Endpoints:
   POST /analyze      – score a feature vector and return anomaly report
   POST /train        – retrain all models from scratch
   POST /compare      – run multi-model comparison and return table
+  POST /feedback     – push explicit label feedback (normal/anomaly) for online learning
   GET  /health       – health check
   GET  /metrics      – summary metrics
   GET  /model        – current active model info
@@ -23,6 +24,7 @@ from pydantic import BaseModel, Field
 from ml.training_data import FEATURE_COLUMNS
 from detectors import structural_detector, frequency_detector
 from scorer import rule_score, make_report
+from ml.online_learner import learner as online_learner
 
 # ── Config ────────────────────────────────────────────────────────────────────
 BLOCK_THRESHOLD     = float(os.getenv("BLOCK_THRESHOLD", "0.6"))
@@ -92,6 +94,7 @@ async def startup():
     print("[startup] Pre-loading ML models…")
     # structural_detector loads itself at import time
     print(f"[startup] Active model: {structural_detector.get_model_name()}")
+    print(f"[startup] Online learner buffer: {online_learner.status()['buffer_size']} samples")
     print("[startup] Ready.")
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -115,6 +118,7 @@ def metrics():
         "config":         CONFIG,
         "block_threshold": BLOCK_THRESHOLD,
         "active_model":   structural_detector.get_model_name(),
+        "online_learner": online_learner.status(),
     }
 
 
@@ -123,6 +127,7 @@ def model_info():
     return {
         "active_model": structural_detector.get_model_name(),
         "last_comparison": _last_comparison,
+        "online_learner": online_learner.status(),
     }
 
 
@@ -149,6 +154,8 @@ async def analyze(vector: FeatureVector, request: Request):
         _metrics["total_blocked"] += 1
     else:
         _metrics["total_passed"] += 1
+        # Feed confirmed-normal queries into the online learner buffer
+        online_learner.add_normal(features)
 
     return report
 
@@ -184,3 +191,46 @@ def compare_models():
         "best_model": best_name,
         "results": results,
     }
+
+
+# ── Feedback & Online Learning ────────────────────────────────────────────────
+
+class FeedbackInput(BaseModel):
+    features: dict = Field(default_factory=dict,
+                           description="Feature vector (same keys as /analyze input)")
+    label:    str  = Field(description="'normal' or 'anomaly'")
+
+
+@app.post("/feedback")
+def feedback(body: FeedbackInput):
+    """
+    Accept explicit label feedback for online learning.
+    Normal samples are buffered; background retraining triggers automatically
+    when buffer reaches the threshold.
+    Body:  { "features": {...}, "label": "normal" | "anomaly" }
+    """
+    label = body.label.strip().lower()
+    if label not in ("normal", "anomaly"):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="label must be 'normal' or 'anomaly'")
+
+    retrain_triggered = False
+    if label == "normal":
+        online_learner.add_normal(body.features)
+        if online_learner.should_retrain():
+            retrain_triggered = online_learner.trigger_retrain_background()
+
+    status = online_learner.status()
+    return {
+        "status":            "added" if label == "normal" else "noted",
+        "label":             label,
+        "buffer_size":       status["buffer_size"],
+        "since_retrain":     status["since_retrain"],
+        "retrain_triggered": retrain_triggered,
+    }
+
+
+@app.get("/learner")
+def learner_status():
+    """Return online learner buffer statistics."""
+    return online_learner.status()

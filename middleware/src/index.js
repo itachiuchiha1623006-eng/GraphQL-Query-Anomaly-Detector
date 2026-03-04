@@ -33,6 +33,11 @@ async function start() {
         res.sendFile(path.join(__dirname, '..', 'public', 'attack-demo.html'));
     });
 
+    // ── Query Analyzer Lab ───────────────────────────────────────────────────────
+    app.get('/query-lab', (req, res) => {
+        res.sendFile(path.join(__dirname, '..', 'public', 'query-lab.html'));
+    });
+
     // ── Server-Sent Events ──────────────────────────────────────────────────────
     app.get('/events', (req, res) => {
         res.setHeader('Content-Type', 'text/event-stream');

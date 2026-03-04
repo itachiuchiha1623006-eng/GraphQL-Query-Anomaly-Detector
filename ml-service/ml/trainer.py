@@ -1,8 +1,9 @@
 """
-trainer.py  (v2 — attack-informed semi-supervised training)
+trainer.py  (v3 — corpus-blended unsupervised training)
 ==============================================================
 Trains Isolation Forest using:
-  - Normal samples only for fitting (unsupervised, as IF requires)
+  - Blended normal samples: 60% from real query corpus + 40% synthetic
+    (unsupervised, as IF requires)
   - Attack samples to tune contamination estimate
   - Validates model using labeled attack data AFTER training
 
@@ -21,7 +22,7 @@ from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import classification_report, roc_auc_score
 
-from ml.training_data import generate_normal_samples, FEATURE_COLUMNS
+from ml.training_data import generate_blended_normal, generate_normal_samples, FEATURE_COLUMNS
 from ml.attack_generator import generate_all_attacks
 
 import pandas as pd
@@ -45,8 +46,12 @@ def train_isolation_forest(verbose: bool = True):
     Returns (iso, scaler).
     """
     if verbose:
-        print("[trainer] Generating normal samples (n=3000)…")
-    normal_df = generate_normal_samples(n=3000)
+        print("[trainer] Generating blended normal samples (60% corpus + 40% synthetic, n=3000)…")
+    try:
+        normal_df = generate_blended_normal(n_total=3000, corpus_ratio=0.60)
+    except Exception as e:
+        print(f"[trainer] WARNING: corpus blend failed ({e}) — using pure synthetic.")
+        normal_df = generate_normal_samples(n=3000)
     X_normal = normal_df[FEATURE_COLUMNS].values.astype(float)
 
     if verbose:
