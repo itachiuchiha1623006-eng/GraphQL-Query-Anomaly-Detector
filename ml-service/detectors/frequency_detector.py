@@ -25,7 +25,7 @@ BUCKET_SECONDS   = 1      # width of each time bucket (seconds)
 HISTORY_BUCKETS  = 30     # how many past buckets to keep for EWMA baseline
 EWMA_ALPHA       = 0.20   # EWMA smoothing (lower = slower adaptation = stricter)
 SPIKE_MULTIPLIER = 2.5    # current_bucket >= SPIKE_MULTIPLIER * ewma_baseline → anomaly
-MIN_HISTORY      = 5      # minimum buckets before detection activates (warm-up)
+MIN_HISTORY      = 2      # minimum buckets before detection activates (warm-up)
 
 
 class FrequencyDetector:

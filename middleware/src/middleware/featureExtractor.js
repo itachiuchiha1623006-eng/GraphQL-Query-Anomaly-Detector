@@ -17,9 +17,12 @@ const INTROSPECTION_FIELDS = new Set([
 ]);
 
 /**
+ 
  * Compute Shannon entropy of an array of strings.
  * Higher entropy = more diverse / unusual field set.
+ 
  */
+
 function shannonEntropy(names) {
     if (!names.length) return 0;
     const freq = {};

@@ -44,3 +44,5 @@ dist/
 build/
 coverage/
 .nyc_output/
+
+/ml-service

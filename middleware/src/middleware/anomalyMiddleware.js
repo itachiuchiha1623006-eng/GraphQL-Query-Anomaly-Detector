@@ -11,6 +11,7 @@ const logger = require('../logger');
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:8000';
 const BLOCK_THRESHOLD = parseFloat(process.env.BLOCK_THRESHOLD || '0.6');
 const STRUCTURAL_THRESHOLD = parseFloat(process.env.STRUCTURAL_THRESHOLD || '0.72');
+const FREQUENCY_THRESHOLD = parseFloat(process.env.FREQUENCY_THRESHOLD || '0.7');
 const ALERT_ONLY = process.env.ALERT_ONLY === 'true';
 
 
@@ -62,15 +63,18 @@ function anomalyMiddleware() {
         // 4. Determine block reason
         const hasRuleViolations = Object.keys(report.rule_violations || {}).length > 0;
         const exceedsMLThreshold = report.ensemble_score >= BLOCK_THRESHOLD;
-        // Structural-only anomalies: IF score alone is high enough even without rules/frequency
-        // (ensemble max without rules/freq = 0.55 × structural, so 0.72 structural → 0.396 ensemble, still below 0.6)
-        // This separate check allows the Isolation Forest to block by itself.
+        // Structural-only: Isolation Forest score alone is high enough to block
         const highStructuralScore = (report.component_scores?.structural || 0) >= STRUCTURAL_THRESHOLD;
+        // Frequency-only: rapid burst score alone is high enough to block
+        // (max frequency contribution to ensemble = 0.25, never reaches 0.6 threshold alone)
+        const highFrequencyScore = (report.component_scores?.frequency || 0) >= FREQUENCY_THRESHOLD
+            && !report.frequency_detail?.warmup;
 
-        const shouldBlock = hasRuleViolations || exceedsMLThreshold || highStructuralScore;
+        const shouldBlock = hasRuleViolations || exceedsMLThreshold || highStructuralScore || highFrequencyScore;
         const blockReason = hasRuleViolations ? 'RULE_VIOLATION'
-            : highStructuralScore ? 'ML_STRUCTURAL'
-                : 'ML_ANOMALY';
+            : highFrequencyScore ? 'FREQUENCY_ATTACK'
+                : highStructuralScore ? 'ML_STRUCTURAL'
+                    : 'ML_ANOMALY';
 
         // 5. Log the analysis result
         const logPayload = {
@@ -103,8 +107,10 @@ function anomalyMiddleware() {
                 errors: [
                     {
                         message: hasRuleViolations
-                            ? `Query blocked: rule violation detected.`
-                            : 'Query blocked: ML anomaly score exceeded threshold.',
+                            ? 'Query blocked: rule violation detected.'
+                            : highFrequencyScore
+                                ? 'Query blocked: request rate spike detected.'
+                                : 'Query blocked: ML anomaly score exceeded threshold.',
                         extensions: {
                             code: 'ANOMALY_DETECTED',
                             block_reason: blockReason,
@@ -112,6 +118,7 @@ function anomalyMiddleware() {
                             threshold: BLOCK_THRESHOLD,
                             component_scores: report.component_scores,
                             rule_violations: report.rule_violations,
+                            frequency_detail: report.frequency_detail,
                         },
                     },
                 ],
