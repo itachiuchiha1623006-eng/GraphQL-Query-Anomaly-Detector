@@ -16,17 +16,21 @@ MODELS_DIR = os.path.join(os.path.dirname(__file__), '..', 'models')
 # ── Load models at import time ────────────────────────────────────────────────
 
 def _load():
-    # Prefer best_model (chosen by comparison), fall back to isolation_forest
+    # Prefer colab model, best_model, or fall back to isolation_forest
     for name, mfile, sfile in [
+        ('colab',     'structural_model.pkl', None),
         ('best',      'best_model.pkl',       'best_scaler.pkl'),
         ('isolation', 'isolation_forest.pkl', 'scaler.pkl'),
     ]:
         mpath = os.path.join(MODELS_DIR, mfile)
-        spath = os.path.join(MODELS_DIR, sfile)
-        if os.path.exists(mpath) and os.path.exists(spath):
-            model  = joblib.load(mpath)
-            scaler = joblib.load(spath)
-            # Read model name if stored
+        if os.path.exists(mpath):
+            model = joblib.load(mpath)
+            scaler = None
+            if sfile:
+                spath = os.path.join(MODELS_DIR, sfile)
+                if os.path.exists(spath):
+                    scaler = joblib.load(spath)
+                    
             npath = os.path.join(MODELS_DIR, 'best_model_name.pkl')
             model_name = joblib.load(npath) if os.path.exists(npath) else name
             print(f'[structural_detector] Loaded model: {model_name}')
@@ -53,7 +57,7 @@ def score(features: dict) -> float:
         return 0.5
 
     vec = np.array([[features.get(f, 0.0) for f in FEATURE_ORDER]], dtype=float)
-    vec_scaled = _scaler.transform(vec)
+    vec_scaled = _scaler.transform(vec) if _scaler else vec
 
     # Supervised model (Random Forest) → use predict_proba directly
     if hasattr(_model, 'predict_proba'):

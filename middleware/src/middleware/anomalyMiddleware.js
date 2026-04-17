@@ -76,7 +76,15 @@ function anomalyMiddleware() {
                 : highStructuralScore ? 'ML_STRUCTURAL'
                     : 'ML_ANOMALY';
 
-        // 5. Log the analysis result
+        // 5. Determine Severity Level for multi-level logging
+        let severity = 'INFO';
+        if (hasRuleViolations || report.ensemble_score >= 0.85) {
+            severity = 'FATAL';
+        } else if (shouldBlock || report.ensemble_score >= 0.40) {
+            severity = 'WARN';
+        }
+
+        // 6. Log the analysis result using multi-level severities
         const logPayload = {
             clientIp,
             queryName: features.query_name,
@@ -85,15 +93,18 @@ function anomalyMiddleware() {
             blockReason: shouldBlock ? blockReason : null,
             ruleViolations: report.rule_violations,
             componentScores: report.component_scores,
+            severity,
         };
 
-        if (shouldBlock) {
-            logger.warn('🚨 Anomalous query detected', logPayload);
+        if (severity === 'FATAL') {
+            logger.error('💥 FATAL: Critical attack intercepted', logPayload);
+        } else if (severity === 'WARN') {
+            logger.warn(`🚨 WARN: ${shouldBlock ? 'Anomalous query blocked' : 'Suspicious but unblocked query'}`, logPayload);
         } else {
-            logger.info('✅ Query passed', { clientIp, queryName: features.query_name, score: report.ensemble_score });
+            logger.info('✅ INFO: Normal query passed', { clientIp, queryName: features.query_name, score: report.ensemble_score });
         }
 
-        // 6. Emit event to dashboard subscribers
+        // 7. Emit event to dashboard subscribers with severity
         anomalyEvents.emit('analysis', {
             ...logPayload,
             isAnomaly: shouldBlock,
