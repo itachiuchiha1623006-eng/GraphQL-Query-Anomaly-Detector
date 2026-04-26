@@ -676,10 +676,10 @@
         <div class="section-title">Categories</div>
         <div class="categories">
             <div class="cat-chip active" onclick="filterCategory(null, this)">All Products</div>
-            <div class="cat-chip" onclick="filterCategory('1', this)">⚡ Electronics</div>
-            <div class="cat-chip" onclick="filterCategory('2', this)">👕 Clothing</div>
-            <div class="cat-chip" onclick="filterCategory('3', this)">📚 Books</div>
-            <div class="cat-chip" onclick="filterCategory('4', this)">🏠 Home & Living</div>
+            <div class="cat-chip" onclick="filterCategory('electronics', this)">⚡ Electronics</div>
+            <div class="cat-chip" onclick="filterCategory('jewelery', this)">💎 Jewelery</div>
+            <div class="cat-chip" onclick="filterCategory('men\'s clothing', this)">👕 Men's Clothing</div>
+            <div class="cat-chip" onclick="filterCategory('women\'s clothing', this)">👗 Women's Clothing</div>
         </div>
 
         <div class="section-title" style="margin-top:2rem">Products</div>
@@ -703,7 +703,7 @@
         <div class="cart-footer">
             <div class="cart-total">
                 <span>Total</span>
-                <span id="cartTotal">$0.00</span>
+                <span id="cartTotal">₹0.00</span>
             </div>
             <button class="checkout-btn" onclick="checkout()">Checkout →</button>
         </div>
@@ -748,18 +748,35 @@
         async function loadProducts(categoryId = null, search = '') {
             document.getElementById('grid').innerHTML = '<div class="loader"><div class="spinner"></div>Loading…</div>';
             try {
-                let q, vars;
-                if (search) {
-                    q = `query Search($q:String!){ searchProducts(query:$q){ id name description price originalPrice inStock rating reviewCount category{name} tags } }`;
-                    vars = { q: search };
-                    const d = await gql(q, vars);
-                    if (d) renderProducts(d.searchProducts);
-                } else {
-                    q = `query Products($cat:ID){ products(categoryId:$cat, limit:20){ id name description price originalPrice inStock rating reviewCount category{name} tags } }`;
-                    vars = { cat: categoryId };
-                    const d = await gql(q, vars);
-                    if (d) renderProducts(d.products);
+                let url = 'https://fakestoreapi.com/products';
+                if (categoryId) {
+                    url = `https://fakestoreapi.com/products/category/${encodeURIComponent(categoryId)}`;
                 }
+                const res = await fetch(url);
+                let products = await res.json();
+
+                if (search) {
+                    const searchLower = search.toLowerCase();
+                    products = products.filter(p => 
+                        p.title.toLowerCase().includes(searchLower) || 
+                        p.description.toLowerCase().includes(searchLower)
+                    );
+                }
+
+                const mappedProducts = products.map(p => ({
+                    id: p.id.toString(),
+                    name: p.title,
+                    description: p.description,
+                    price: p.price,
+                    originalPrice: p.price * 1.2,
+                    inStock: true,
+                    rating: p.rating ? p.rating.rate : 0,
+                    reviewCount: p.rating ? p.rating.count : 0,
+                    category: { name: p.category },
+                    image: p.image
+                }));
+
+                renderProducts(mappedProducts);
             } catch (e) {
                 document.getElementById('grid').innerHTML = `<div class="loader">⚠️ ${e.message}</div>`;
             }
@@ -776,18 +793,18 @@
                 return `
     <div class="product-card" onclick="openProduct('${p.id}')">
       ${disc > 0 ? `<div class="discount-badge">-${disc}%</div>` : ''}
-      <div class="product-img">${EMOJI_MAP[p.id] || '📦'}</div>
+      <div class="product-img"><img src="${p.image || ''}" alt="${p.name.replace(/"/g, '&quot;')}" style="width:100%; height:100%; object-fit:contain; padding:1rem; background:white; border-radius:16px 16px 0 0;"></div>
       <div class="product-body">
         <div class="product-tag">${p.category.name}</div>
         <div class="product-name">${p.name}</div>
         <div class="product-desc">${p.description.substring(0, 70)}…</div>
         <div class="product-footer">
           <div class="price-wrap">
-            <span class="price">$${p.price.toFixed(2)}</span>
-            ${p.originalPrice ? `<span class="price-orig">$${p.originalPrice.toFixed(2)}</span>` : ''}
+            <span class="price">₹${p.price.toFixed(2)}</span>
+            ${p.originalPrice ? `<span class="price-orig">₹${p.originalPrice.toFixed(2)}</span>` : ''}
           </div>
           ${p.inStock
-                        ? `<button class="add-btn" onclick="addToCart(event,'${p.id}','${p.name}',${p.price})">+ Cart</button>`
+                        ? `<button class="add-btn" onclick="addToCart(event,'${p.id}','${p.name.replace(/'/g, "\\'")}',${p.price})">+ Cart</button>`
                         : `<span class="out-badge">Out of Stock</span>`}
         </div>
         <div class="stars" style="margin-top:.5rem">${stars} <span style="color:var(--muted);font-size:.8rem">(${p.reviewCount})</span></div>
@@ -824,7 +841,7 @@
         function updateCartUI() {
             const count = cart.itemCount || 0;
             document.getElementById('cartCount').textContent = count;
-            document.getElementById('cartTotal').textContent = `$${(cart.total || 0).toFixed(2)}`;
+            document.getElementById('cartTotal').textContent = `₹${(cart.total || 0).toFixed(2)}`;
             const el = document.getElementById('cartItems');
             if (!cart.items?.length) {
                 el.innerHTML = '<div class="empty-cart">🛒<br><br>Your cart is empty</div>';
@@ -835,7 +852,7 @@
       <div class="cart-item-img">${EMOJI_MAP[i.product.id] || '📦'}</div>
       <div class="cart-item-info">
         <div class="cart-item-name">${i.product.name}</div>
-        <div class="cart-item-price">$${i.subtotal.toFixed(2)}</div>
+        <div class="cart-item-price">₹${i.subtotal.toFixed(2)}</div>
         <div class="qty-ctrl">
           <button class="qty-btn" onclick="updateQty('${i.id}',${i.quantity - 1})">−</button>
           <span>${i.quantity}</span>
